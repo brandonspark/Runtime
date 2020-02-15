@@ -1,0 +1,214 @@
+CM.make "sandbox.cm";
+open Sandbox;
+
+exception Done
+exception Error
+
+val inStream = TextIO.openIn "squares.txt"
+val outStream = TextIO.openOut "output.txt"
+
+fun printToOutStream str = (TextIO.output(outStream,str))
+(* tape: a ref cell containing the double-sided infinite tape *)
+datatype direction = L | R
+datatype instructions = Turn | Forward | Inc | Dec | Start | End | Input | Output
+
+val tape : (int list * int list * direction) ref = ref ([], [], R)
+val stack : ((int * direction) list ref) = ref ([]: (int * direction) list)
+val count = ref 0
+val limit = 550
+val debug = false
+
+fun leftTape () = #1 (!tape)
+fun rightTape () = #2 (!tape)
+fun direction () = #3 (!tape)
+
+fun updateLeft (l: int list) = tape := (l, rightTape (), direction ())
+fun updateRight (r: int list) = tape := (leftTape (), r, direction ())
+fun updateDirection (d: direction) = tape := (leftTape (), rightTape (), d)
+
+fun invertDirection () = 
+    case direction () of
+        L => R
+      | R => L
+
+(* getCurrent: returns what is at the tape head *)
+fun getCurrent () = 
+    case (#2 (!tape)) of
+        [] => 0
+      | x::_ => x
+
+fun isIn (s: string, []: string list): bool = false
+  | isIn (s, x::xs) = if s = x then true else isIn (s, xs)
+
+(* left: moves the tape head left by n positions *)
+fun left 0 = ()
+  | left n = 
+    case !tape of
+      ([], r, d) => (tape := ([], 0::r, d); left (n - 1))
+    | (l::ls, r, d) => (tape := (ls, l::r, d); left (n - 1))
+
+(* right: moves the tape head right by n positions *)
+fun right 0 = ()
+  | right n =
+    case !tape of
+      (l, [], d) => (tape := (0::l, [], d); right (n - 1))
+    | (l, r::rs, d) => (tape := (r::l, rs, d); right (n - 1))
+
+fun fix n = 
+  case (n >= 255, n < 0) of
+    (true, _) => 0
+  | (_, true) => 255
+  | (_) => n
+
+fun inc 0 = ()
+  | inc n = 
+    case rightTape () of
+        [] => (updateRight [1]; inc (n-1))
+      | x::xs => (updateRight ((fix (x+1))::xs); inc (n - 1))
+
+fun dec 0 = ()
+  | dec n = 
+    case rightTape () of
+        [] => (updateRight [255]; dec (n-1))
+      | x::xs => (updateRight ((fix (x-1))::xs); dec (n - 1))
+
+fun is_digit c =
+    case Int.fromString (str c) of
+        NONE => false
+        | _ => true
+
+fun readDigits (s: string): int =
+    let
+      val tokens = ref (String.explode s)
+      val digits = ref []
+      fun readToken () = 
+        case !tokens of
+            [] => raise Fail "no tokens"
+          | x::xs => if (is_digit x) then (digits := (x::(!digits)); tokens := xs; readToken ()) else raise Done 
+    in
+      (readToken ()) handle Done => 
+        (case !digits of
+            [] => raise Fail "digits list empty"
+          | l => (case Int.fromString (String.implode (rev l)) of
+                    NONE => raise Fail "Int from string failed on read digits"
+                  | SOME x => x))
+    end
+
+
+fun parenMatch (i, instr: (instructions * int) Seq.seq, 0) = i
+  | parenMatch (i, instr, acc): int =
+  let
+    val () = ()
+  in
+    case Seq.nth instr i of
+        (End, 0) => if (acc - 1) = 0 then parenMatch(i, instr, 0) else parenMatch (i + 1, instr, acc - 1)
+      | (Start, 0) => parenMatch (i + 1, instr, acc + 1)
+      | _ => (parenMatch (i + 1, instr, acc))
+  end
+
+fun push (i: int, d: direction) = (stack := ((i, d)::(!stack)))
+
+fun pop () = case !stack of
+    [] => raise Fail "somehow popped empty stack"
+  | x::xs => (stack := xs)
+
+fun peek () = case !stack of
+    [] => raise Fail "peeked empty stack"
+  | x::xs => x
+
+fun itos (instr: instructions): string =
+  case instr of
+    Turn => "Turn"
+  | Forward => "Forward"
+  | Inc => "Inc"
+  | Dec => "Dec"
+  | Start => "Start"
+  | End => "End"
+  | Input => "Input"
+  | Output => "Output"
+
+fun dtos d =
+  case d of
+    L => "L"
+  | R => "R"
+
+fun printTape () = 
+  let
+    val l = map (fn x => (Int.toString x) ^ " ") (rev (#1 (!tape)))
+    val r = map (fn x => (Int.toString x) ^ " ") (#2 (!tape))
+  in
+    printToOutStream ("{" ^ (dtos (#3 (!tape))) ^ "} " ^ (List.foldr (op^) "" l) ^ "[*] " ^ (List.foldr (op^) "" r) ^ "\n" )
+  end 
+
+fun printInstr (instr, i) = 
+  (itos instr) ^ " " ^ (Int.toString i) ^ "\n"
+
+fun output 0 = ()
+  | output n = (printToOutStream ((String.str (chr (getCurrent ())))); output (n-1))
+
+fun parse (i : int, instrs: (instructions * int) Seq.seq): int =
+  let
+    val () = if debug then (if !count >= limit then raise Fail "too many instructions" else (); printTape (); printToOutStream ("Instr: " ^ (Int.toString i) ^ " - "); printToOutStream (printInstr (Seq.nth instrs i)); count := !count + 1) else ()
+  in
+    case ((Seq.nth instrs i) : (instructions * int)) of
+        (Turn, _) => (tape := (leftTape (), rightTape (), invertDirection ()); i + 1)
+      | (Forward, x) => (case (direction ()) of
+                    L => (left x; i + 1)
+                  | R => (right x; i + 1))
+      | (Inc, x) => (inc x; i + 1)
+      | (Dec, x) => (dec x; i + 1)
+      | (Start, _) => (case getCurrent () of
+                    0 => ((parenMatch (i + 1, instrs, 1)) + 1) (* if i skip, no need to change orientation - skip to after ] *)
+                  | _ => (push (i + 1, direction ()); i + 1))
+      | (End, _) => (case getCurrent () of
+                    0 => (updateDirection (#2 (peek ())); pop (); i + 1)
+                  | _ => (updateDirection (#2 (peek ())); (case !stack of
+                                                            [] => raise Fail "popped empty stack"
+                                                          | x::xs => #1 x)))
+      | (Input, x) => raise Fail "unimplemented"
+      | (Output, x) => (output x; i + 1)
+  end
+
+fun mapFun (s: string): instructions * int =
+    case String.extract (s, 0, SOME 2) of
+        "Tu" => (Turn, 1)
+      | "Lu" => (Forward, readDigits (String.extract (s, 14, NONE)))
+      | "Do" => (Inc, readDigits (String.extract (s, 3, NONE)))
+      | "Sq" => (Dec, readDigits (String.extract (s, 6, NONE)))
+      | "To" => (Start, 0)
+      | "St" => (End, 0)
+      | "Tw" =>
+        (case String.substring (s, 6, 1) of
+            "l" => (Input, readDigits (String.extract (s, 12, NONE)))
+          | "r" => (Output, readDigits (String.extract (s, 12, NONE)))
+          | _ => raise Fail "invalid direction")
+      | _ => raise Fail "invalid string"
+    
+fun load (inStream: TextIO.instream) =
+    let 
+        val instr: string list ref = ref []
+        fun loadOne () =
+            case TextIO.inputLine inStream of
+                NONE => raise Done
+              | SOME line => (instr := line::(!instr); loadOne ())
+        val loaded = loadOne () handle Done => ()
+        val y = Seq.fromList (rev (!instr))
+        val () = if debug then printToOutStream ("length: " ^ (Int.toString (Seq.length y)) ^ "\n") else ()
+        val instrSeq: (instructions * int) Seq.seq = Seq.map mapFun (y)
+        val ss = Seq.map (fn (a, b) => (itos a ^ " ")) instrSeq
+        val () =if debug then printToOutStream (Seq.reduce (op^) "" ss) else ()
+        fun go (i: int) = 
+          let
+            val next = parse(i, instrSeq) handle Range => (printToOutStream "\n\nPROGRAM TERMINATED \n\n"; raise Fail "done")
+          in
+            go next
+          end
+    in 
+        go 0
+    end
+        
+val run = load inStream handle Fail x => ()
+
+val (x, y, z) = !tape
+
+val () = TextIO.closeOut(outStream)
