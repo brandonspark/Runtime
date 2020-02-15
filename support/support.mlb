@@ -1,0 +1,21 @@
+lib.mlb
+
+local
+  $(SML_LIB)/basis/basis.mlb
+
+  IMAGE.sig
+  PPM.sml
+  MCS.sig
+  MAX_RECTANGLE.sig
+  Kadane.sml
+  IteratedBrightest.sml
+  ScaledBrightest.sml
+in
+  signature IMAGE
+  functor PPM
+  signature MCS
+  signature MAX_RECTANGLE
+  functor Kadane
+  functor IteratedBrightest
+  functor ScaledBrightest
+end
