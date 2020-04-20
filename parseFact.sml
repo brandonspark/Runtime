@@ -4,7 +4,7 @@ open Sandbox;
 exception Done
 exception Error
 
-val inStream = TextIO.openIn "main.run"
+val inStream = TextIO.openIn "test.txt"
 val outStream = TextIO.openOut "output.txt"
 
 fun printToOutStream str = (TextIO.output(outStream,str))
@@ -15,7 +15,7 @@ datatype instructions = Turn | Forward | Inc | Dec | Start | End | Input | Outpu
 val tape : (int list * int list * direction) ref = ref ([], [], R)
 val stack : ((int * direction) list ref) = ref ([]: (int * direction) list)
 val count = ref 0
-val limit = 550
+val limit = 1000
 val debug = false
 
 fun leftTape () = #1 (!tape)
@@ -149,6 +149,7 @@ fun output 0 = ()
 fun parse (i : int, instrs: (instructions * int) Seq.seq): int =
   let
     val () = if debug then (if !count >= limit then raise Fail "too many instructions" else (); printTape (); printToOutStream ("Instr: " ^ (Int.toString i) ^ " - "); printToOutStream (printInstr (Seq.nth instrs i)); count := !count + 1) else ()
+    val () = if !count >= limit then raise Fail "out of instructions" else ()
   in
     case ((Seq.nth instrs i) : (instructions * int)) of
         (Turn, _) => (tape := (leftTape (), rightTape (), invertDirection ()); i + 1)

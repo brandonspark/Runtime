@@ -4,7 +4,7 @@ open Sandbox;
 exception Done
 exception Error
 
-val inStream = TextIO.openIn "main.run"
+val inStream = TextIO.openIn "hello.txt"
 val outStream = TextIO.openOut "output.txt"
 
 fun printToOutStream str = (TextIO.output(outStream,str))

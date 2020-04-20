@@ -1,5 +1,5 @@
 
-s = str(raw_input())
+s = str(input())
 
 store = ''
 
